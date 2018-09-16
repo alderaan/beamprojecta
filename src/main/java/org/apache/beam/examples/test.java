@@ -29,6 +29,8 @@ import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.sdk.io.gcp.bigquery.TableRowJsonCoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
@@ -36,76 +38,24 @@ import org.apache.beam.sdk.io.gcp.bigquery.TableRowJsonCoder;
  */
 public class test {
     
+  private static final Logger LOG = LoggerFactory.getLogger(test.class);
    
-  /**
-   * Concept #2: You can make your pipeline assembly code less verbose by defining your DoFns
-   * statically out-of-line. This DoFn tokenizes lines of text into individual words; we pass it to
-   * a ParDo in the pipeline.
-   */
-  static class ExtractWordsFn extends DoFn<String, String> {
-    private final Counter emptyLines = Metrics.counter(ExtractWordsFn.class, "emptyLines");
-    private final Distribution lineLenDist =
-        Metrics.distribution(ExtractWordsFn.class, "lineLenDistro");
-
-    @DoFn.ProcessElement
-    public void processElement(@DoFn.Element String element, DoFn.OutputReceiver<String> receiver) {
-      lineLenDist.update(element.length());
-      if (element.trim().isEmpty()) {
-        emptyLines.inc();
-      }
-
-      // Split the line into words.
-      String[] words = element.split(ExampleUtils.TOKENIZER_PATTERN, -1);
-
-      // Output each word encountered into the output PCollection.
-      for (String word : words) {
-        if (!word.isEmpty()) {
-          receiver.output(word);
+    static class JsonToKV extends DoFn<String, KV<String, String>> {
+      @ProcessElement
+      public void processElement(@Element String word, OutputReceiver<KV<String, String>> out) {
+        // Use OutputReceiver.output to emit the output element.
+        
+        String[] myString = word.replace(",","").replace("\"","").replaceAll("\\s+","").split(":");
+        
+        if(myString.length == 2)
+        {
+            out.output(KV.of(myString[0], myString[1]));
         }
+           
       }
-    }
-  }
-
-  /** A SimpleFunction that converts a Word and Count into a printable string. */
-  public static class FormatAsTextFn extends SimpleFunction<KV<String, Long>, String> {
-    @Override
-    public String apply(KV<String, Long> input) {
-      return input.getKey() + ": " + input.getValue();
-    }
-  }
-
-  /**
-   * A PTransform that converts a PCollection containing lines of text into a PCollection of
-   * formatted word counts.
-   *
-   * <p>Concept #3: This is a custom composite transform that bundles two transforms (ParDo and
-   * Count) as a reusable PTransform subclass. Using composite transforms allows for easy reuse,
-   * modular testing, and an improved monitoring experience.
-   */
-  public static class CountWords
-      extends PTransform<PCollection<String>, PCollection<KV<String, Long>>> {
-    @Override
-    public PCollection<KV<String, Long>> expand(PCollection<String> lines) {
-
-      // Convert lines of text into individual words.
-      PCollection<String> words = lines.apply(ParDo.of(new ExtractWordsFn()));
-
-      // Count the number of times each word occurs.
-      PCollection<KV<String, Long>> wordCounts = words.apply(Count.perElement());
-
-      return wordCounts;
-    }
-  }
-
-  /**
-   * Options supported by {@link WordCount}.
-   *
-   * <p>Concept #4: Defining your own configuration options. Here, you can add your own arguments to
-   * be processed by the command-line parser, and specify default values for them. You can then
-   * access the options values in your pipeline code.
-   *
-   * <p>Inherits standard configuration options.
-   */
+}
+  
+  
   public interface WordCountOptions extends PipelineOptions {
 
     /**
@@ -126,32 +76,32 @@ public class test {
     void setOutput(String value);
   }
 
-  static void runWordCount(WordCountOptions options) {
-    Pipeline p = Pipeline.create(options);
-
-    // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
-    // static FormatAsTextFn() to the ParDo transform.
-    p.apply("ReadLines", TextIO.read().from(options.getInputFile()))
-        .apply(new CountWords())
-        .apply(MapElements.via(new FormatAsTextFn()))
-        .apply("WriteCounts", TextIO.write().to(options.getOutput()));
-
-    p.run().waitUntilFinish();
-  }
 
   public static void main(String[] args) {
     WordCountOptions options =
         PipelineOptionsFactory.fromArgs(args).withValidation().as(WordCountOptions.class);
 
-    //runWordCount(options);
+    
+    LOG.info("Logging works ");
     
     Pipeline p = Pipeline.create(options);
 
-    // Concepts #2 and #3: Our pipeline applies the composite CountWords transform, and passes the
-    // static FormatAsTextFn() to the ParDo transform.
-    //p.apply("ReadLines", TextIO.read().from(options.getInputFile()).withCoder(TableRowJsonCoder.of()))
-    p.apply("ReadLines", TextIO.read().from(options.getInputFile())) ;       
-    //.apply("WriteCounts", TextIO.write().to(options.getOutput()));
+    PCollection<String> myInput = p.apply("ReadLines", TextIO.read().from(options.getInputFile()));
+
+    PCollection<KV<String, String>> myInput2 = myInput.apply(
+        ParDo
+        .of(new JsonToKV()));
+
+    
+    PCollection<String> myInput3 = myInput2
+    .apply(
+            MapElements.into(TypeDescriptors.strings())
+                .via(
+                    (KV<String, String> wordCount) ->
+                        wordCount.getKey() + ": " + wordCount.getValue()));
+            
+   
+    myInput3.apply("WriteCounts", TextIO.write().to(options.getOutput()));
     
     p.run().waitUntilFinish();
 
