@@ -1,0 +1,10 @@
+{
+"order_number": "AP-1",
+"service_type": "GET_INTERVIEW",
+"driver_id": "driver-123",
+"customer_id": "customer-123",
+"service_area_name": "JAKARTA",
+"payment_type": "GET_CASH",
+"status": "COMPLETED",
+"event_timestamp": "2018-03-29T14:00:00.000Z"
+}
