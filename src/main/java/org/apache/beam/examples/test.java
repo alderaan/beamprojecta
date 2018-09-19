@@ -45,7 +45,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import static junit.framework.Assert.assertNotNull;
+import org.apache.beam.sdk.transforms.Sum;
+import org.apache.beam.sdk.transforms.Watch;
+import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
+import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
+import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.junit.Test;
+
 
 /**
  *
@@ -149,11 +155,7 @@ public class test {
 
     
 
-    
-    
-    
-
-    
+   
     
      static class ParseJsonFn extends DoFn<String, String> {
 
@@ -163,7 +165,7 @@ public class test {
         ObjectMapper mapper = new ObjectMapper();
           
         GetMessage getMessage = mapper.readValue(in, GetMessage.class);
-        out.output(getMessage.getstatus().toString());
+        out.output(getMessage.getservice_area_name().toString() + ":" + getMessage.getpayment_type().toString() + ":" + getMessage.getstatus().toString());
           
         }
     }
@@ -199,11 +201,40 @@ public class test {
     
     Pipeline p = Pipeline.create(options);
 
-    PCollection<String> myInput = p.apply("ReadLines", TextIO.read().from(options.getInputFile()));
+    PCollection<String> myInput = p.apply("ReadLines", TextIO.read().from(options.getInputFile())
+        .watchForNewFiles(
+        // Check for new files every 30 seconds
+        Duration.standardSeconds(1),
+        // Never stop checking for new files
+        Watch.Growth.<String>never())
+    );
+            
+            
     
 
 
     PCollection<String> jsons = myInput.apply(ParDo.of(new ParseJsonFn()));  
+    
+    PCollection<KV<String, Long>> counted = jsons
+            .apply(
+            "LeaderboardUserGlobalWindow",
+            //Window.<String>into(new GlobalWindows())
+            Window.<String>into(FixedWindows.of(Duration.standardMinutes(1)))
+                // Get periodic results every ten minutes.
+                .triggering(
+                    Repeatedly.forever(
+                        AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(1))))
+                .discardingFiredPanes()
+                .withAllowedLateness(Duration.standardMinutes(10)))    
+            .apply(Count.perElement());   
+   
+    
+    PCollection<String> myInput3 = counted
+    .apply(
+            MapElements.into(TypeDescriptors.strings())
+                .via(
+                    (KV<String, Long> wordCount) ->
+                        wordCount.getKey() + ": " + wordCount.getValue()));
     
 
     PCollection<KV<String, String>> myInput2 = myInput.apply(
@@ -222,7 +253,8 @@ public class test {
 
     
     //fixedWindowedItems
-    jsons.apply("WriteCounts", TextIO.write().to(options.getOutput()));
+    myInput3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(3).to(options.getOutput()));
+    //myInput3.apply("WriteCounts", TextIO.write().to(options.getOutput()));
     
     p.run().waitUntilFinish();
 
