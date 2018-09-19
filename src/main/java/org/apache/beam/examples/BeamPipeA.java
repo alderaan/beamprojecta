@@ -5,16 +5,10 @@
  */
 package org.apache.beam.examples;
 
-import com.fasterxml.jackson.core.JsonParseException;
-import com.google.api.client.json.Json;
-import com.google.api.services.bigquery.model.TableRow;
-import java.util.Arrays;
-import org.apache.beam.examples.common.ExampleUtils;
+
+
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.TextIO;
-import org.apache.beam.sdk.metrics.Counter;
-import org.apache.beam.sdk.metrics.Distribution;
-import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
@@ -22,19 +16,11 @@ import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.Validation;
 import org.apache.beam.sdk.transforms.Count;
 import org.apache.beam.sdk.transforms.DoFn;
-import org.apache.beam.sdk.transforms.Filter;
-import org.apache.beam.sdk.transforms.FlatMapElements;
 import org.apache.beam.sdk.transforms.MapElements;
-import org.apache.beam.sdk.transforms.PTransform;
 import org.apache.beam.sdk.transforms.ParDo;
-import org.apache.beam.sdk.transforms.SimpleFunction;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TypeDescriptors;
-import org.apache.beam.sdk.io.gcp.bigquery.TableRowJsonCoder;
-import org.apache.beam.sdk.transforms.Combine;
-import org.apache.beam.sdk.transforms.Flatten;
-import org.apache.beam.sdk.transforms.GroupByKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
@@ -44,13 +30,23 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.TemporalAccessor;
 import static junit.framework.Assert.assertNotNull;
-import org.apache.beam.sdk.transforms.Sum;
 import org.apache.beam.sdk.transforms.Watch;
+import org.apache.beam.sdk.transforms.WithTimestamps;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.junit.Test;
+import java.util.Date;
+import org.apache.beam.sdk.transforms.DoFn.Timestamp;
+import org.joda.time.DateTime;
+import org.joda.time.format.DateTimeFormat;
+//import java.time.Instant;
+
 
 
 /**
@@ -62,9 +58,9 @@ import org.junit.Test;
 
 
 
-public class test {
+public class BeamPipeA {
     
-  private static final Logger LOG = LoggerFactory.getLogger(test.class);
+  private static final Logger LOG = LoggerFactory.getLogger(BeamPipeA.class);
    
     static class JsonToKV extends DoFn<String, KV<String, String>> {
       @ProcessElement
@@ -163,15 +159,24 @@ public class test {
         public void processElement(@Element String in, OutputReceiver<String> out) throws IOException {
       
         ObjectMapper mapper = new ObjectMapper();
-          
+        
+        // load json string to model
         GetMessage getMessage = mapper.readValue(in, GetMessage.class);
-        out.output(getMessage.getservice_area_name().toString() + ":" + getMessage.getpayment_type().toString() + ":" + getMessage.getstatus().toString());
+        
+        // extract event timestamp
+        DateTime dt = new DateTime(getMessage.getevent_timestamp());
+        org.joda.time.Instant test = dt.toInstant();
+        
+        // add event timestamp to the pcollection of composite keys
+        out.outputWithTimestamp(getMessage.getservice_area_name().toString() + ":" + getMessage.getpayment_type().toString() + ":" + getMessage.getstatus().toString(), test);
           
         }
+
+   
     }
   
   
-  public interface WordCountOptions extends PipelineOptions {
+  public interface BeamPipeAOptions extends PipelineOptions {
 
     /**
      * By default, this example reads from a public dataset containing the text of King Lear. Set
@@ -193,8 +198,8 @@ public class test {
 
 
   public static void main(String[] args) {
-    WordCountOptions options =
-        PipelineOptionsFactory.fromArgs(args).withValidation().as(WordCountOptions.class);
+    BeamPipeAOptions options =
+        PipelineOptionsFactory.fromArgs(args).withValidation().as(BeamPipeAOptions.class);
 
     
     LOG.info("Logging works ");
@@ -204,7 +209,7 @@ public class test {
     PCollection<String> myInput = p.apply("ReadLines", TextIO.read().from(options.getInputFile())
         .watchForNewFiles(
         // Check for new files every 30 seconds
-        Duration.standardSeconds(1),
+        Duration.standardSeconds(5),
         // Never stop checking for new files
         Watch.Growth.<String>never())
     );
@@ -213,9 +218,10 @@ public class test {
     
 
 
-    PCollection<String> jsons = myInput.apply(ParDo.of(new ParseJsonFn()));  
+    PCollection<String> composite_keys = myInput.apply(ParDo.of(new ParseJsonFn()));  
     
-    PCollection<KV<String, Long>> counted = jsons
+    PCollection<KV<String, Long>> counted = composite_keys
+            
             .apply(
             "LeaderboardUserGlobalWindow",
             //Window.<String>into(new GlobalWindows())
@@ -253,7 +259,7 @@ public class test {
 
     
     //fixedWindowedItems
-    myInput3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(3).to(options.getOutput()));
+    myInput3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(1).to(options.getOutput()));
     //myInput3.apply("WriteCounts", TextIO.write().to(options.getOutput()));
     
     p.run().waitUntilFinish();
