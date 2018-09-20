@@ -5,8 +5,6 @@
  */
 package org.apache.beam.examples;
 
-
-
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.TextIO;
 import org.apache.beam.sdk.options.Default;
@@ -26,27 +24,15 @@ import org.slf4j.LoggerFactory;
 import org.apache.beam.sdk.transforms.windowing.FixedWindows;
 import org.joda.time.Duration;
 import org.apache.beam.sdk.transforms.windowing.Window;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.text.SimpleDateFormat;
-import java.time.Instant;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.TemporalAccessor;
 import static junit.framework.Assert.assertNotNull;
 import org.apache.beam.sdk.transforms.Watch;
-import org.apache.beam.sdk.transforms.WithTimestamps;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindows;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.junit.Test;
 import java.util.Date;
-import org.apache.beam.sdk.transforms.DoFn.Timestamp;
 import org.joda.time.DateTime;
-import org.joda.time.format.DateTimeFormat;
-//import java.time.Instant;
-
 
 
 /**
@@ -56,29 +42,10 @@ import org.joda.time.format.DateTimeFormat;
 
 
 
-
-
 public class BeamPipeA {
     
   private static final Logger LOG = LoggerFactory.getLogger(BeamPipeA.class);
-   
-    static class JsonToKV extends DoFn<String, KV<String, String>> {
-      @ProcessElement
-      public void processElement(@Element String word, OutputReceiver<KV<String, String>> out) {
-        // Use OutputReceiver.output to emit the output element.
-        
-        String[] myString = word.replace(",","").replace("\"","").replaceAll("\\s+","").split(":");
-        
-        if(myString.length == 2)
-        {
-            out.output(KV.of(myString[0], myString[1]));
-        }
-           
-      }
-}
-    
-    
-  
+ 
     private static class GetMessage
     {
         private String order_number;
@@ -150,9 +117,6 @@ public class BeamPipeA {
     }
 
     
-
-   
-    
      static class ParseJsonFn extends DoFn<String, String> {
 
         @ProcessElement
@@ -167,9 +131,15 @@ public class BeamPipeA {
         DateTime dt = new DateTime(getMessage.getevent_timestamp());
         org.joda.time.Instant test = dt.toInstant();
         
-        // add event timestamp to the pcollection of composite keys
-        out.outputWithTimestamp(getMessage.getservice_area_name().toString() + ":" + getMessage.getpayment_type().toString() + ":" + getMessage.getstatus().toString(), test);
+        try {
+        //add event timestamp to the pcollection of composite keys
+        out.outputWithTimestamp(getMessage.getservice_area_name().toString() + "," + getMessage.getpayment_type().toString() + "," + getMessage.getstatus().toString(), test);
           
+        } catch (java.lang.IllegalArgumentException exception) {
+
+              LOG.info("Exception found:", exception);
+        }
+        
         }
 
    
@@ -178,12 +148,8 @@ public class BeamPipeA {
   
   public interface BeamPipeAOptions extends PipelineOptions {
 
-    /**
-     * By default, this example reads from a public dataset containing the text of King Lear. Set
-     * this option to choose a different input file or glob.
-     */
     @Description("Path of the file to read from")
-    @Default.String("gs://apache-beam-samples/shakespeare/kinglear.txt")
+    //@Default.String("gs://apache-beam-samples/shakespeare/kinglear.txt")
     String getInputFile();
 
     void setInputFile(String value);
@@ -201,35 +167,27 @@ public class BeamPipeA {
     BeamPipeAOptions options =
         PipelineOptionsFactory.fromArgs(args).withValidation().as(BeamPipeAOptions.class);
 
-    
-    LOG.info("Logging works ");
-    
     Pipeline p = Pipeline.create(options);
 
+    // Continously watch for new files every n seconds
     PCollection<String> myInput = p.apply("ReadLines", TextIO.read().from(options.getInputFile())
         .watchForNewFiles(
-        // Check for new files every 30 seconds
         Duration.standardSeconds(5),
-        // Never stop checking for new files
         Watch.Growth.<String>never())
     );
             
             
-    
-
 
     PCollection<String> composite_keys = myInput.apply(ParDo.of(new ParseJsonFn()));  
     
     PCollection<KV<String, Long>> counted = composite_keys
-            
             .apply(
-            "LeaderboardUserGlobalWindow",
-            //Window.<String>into(new GlobalWindows())
-            Window.<String>into(FixedWindows.of(Duration.standardMinutes(1)))
+            "Standard Window",
+            Window.<String>into(FixedWindows.of(Duration.standardMinutes(5)))
                 // Get periodic results every ten minutes.
                 .triggering(
                     Repeatedly.forever(
-                        AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(1))))
+                        AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardSeconds(1))))
                 .discardingFiredPanes()
                 .withAllowedLateness(Duration.standardMinutes(10)))    
             .apply(Count.perElement());   
@@ -243,24 +201,9 @@ public class BeamPipeA {
                         wordCount.getKey() + ": " + wordCount.getValue()));
     
 
-    PCollection<KV<String, String>> myInput2 = myInput.apply(
-        ParDo
-        .of(new JsonToKV()));
-
-    /*PCollection<KV<String, Iterable<String>>> groupedWords = myInput2.apply(
-    GroupByKey.create());*/
-    
-    
-   
-    
-   
-    /*PCollection<String> fixedWindowedItems = myInput3.apply(
-        Window.<String>into(FixedWindows.of(Duration.standardMinutes(1))));*/
-
-    
     //fixedWindowedItems
     myInput3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(1).to(options.getOutput()));
-    //myInput3.apply("WriteCounts", TextIO.write().to(options.getOutput()));
+
     
     p.run().waitUntilFinish();
 
