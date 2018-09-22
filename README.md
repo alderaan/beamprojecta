@@ -6,6 +6,8 @@ This project implements a realtime streaming pipeline with apache beam using the
 
 For demonstration purposes, there are 180 example input files, each with one line of json encoded event in each file. Each file's timestamp is 1 minute later than the previous one. Thus, the 180 files span roughly 3 hours. There are 4 output files spanning a bit more than 3 hours of event time. (The first timestamp does not begin on a full hour). If the application runs continuously, there will be one output file per window and trigger duration (5 minutes) which will result in 12 files per hourly window. 
 
+![Alt text](GetPipeline.jpg?raw=true "Flowchart of Beam Pipeline")
+
 # Input
 As input json files are used, which cannot be nested and have to be formatted as one json object per row. Timestamps have to be format as ISO8601 with a "T" character separating date and time, and a "Z" character (for UTC) terminating the 3 digit milliseconds at the end. 
 
