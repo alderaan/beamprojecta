@@ -114,7 +114,7 @@ public class BeamPipeA {
         public void processElement(@Element String in, OutputReceiver<String> out) throws IOException {
       
         ObjectMapper mapper = new ObjectMapper();  
-        GetMessage getMessage = new GetMessage();
+        GetMessage getMessage;
         
         // load json string to model
         try {
@@ -127,12 +127,12 @@ public class BeamPipeA {
             org.joda.time.Instant dt_inst = dt.toInstant();
 
             // output composite key
-            out.outputWithTimestamp(getMessage.getservice_area_name().toString() + "," + getMessage.getpayment_type().toString() + "," + getMessage.getstatus().toString(), dt_inst);
+            out.outputWithTimestamp(getMessage.getservice_area_name() + "," + getMessage.getpayment_type() + "," + getMessage.getstatus(), dt_inst);
 
           
         } catch (Exception exception) {
 
-              // Write this to file in production
+              // In production, this should be written to an extra file
               LOG.warn("Failed to process input {}", exception);
      
         }      
@@ -155,47 +155,47 @@ public class BeamPipeA {
     void setOutput(String value);
   }
 
-
   public static void main(String[] args) {
     
-      BeamPipeAOptions options =
-        PipelineOptionsFactory.fromArgs(args).withValidation().as(BeamPipeAOptions.class);
+    BeamPipeAOptions options = PipelineOptionsFactory.fromArgs(args).withValidation().as(BeamPipeAOptions.class);
 
     Pipeline p = Pipeline.create(options);
 
     // Continously watch for new files every n seconds
+    // Read in 1-line jsons from files
     PCollection<String> lines = p.apply("ReadLines", TextIO.read().from(options.getInputFile())
         .watchForNewFiles(
         Duration.standardSeconds(10),
         Watch.Growth.<String>never())
     );
             
-            
+    // extract composite keys out of every line        
     PCollection<String> composite_keys = lines.apply(ParDo.of(new ParseJsonFn()));  
     
+    // count occurence of all existing composite keys
+    // this is equivalent to counts of all existing combinations of service area, payment type and status
     PCollection<KV<String, Long>> counted = composite_keys
             .apply(
             "Standard Window",
-            Window.<String>into(FixedWindows.of(Duration.standardMinutes(5)))
+            Window.<String>into(FixedWindows.of(Duration.standardMinutes(60)))
                 // Get periodic results every ten minutes.
                 .triggering(
                     Repeatedly.forever(
-                        AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardSeconds(1))))
+                        AfterProcessingTime.pastFirstElementInPane().plusDelayOf(Duration.standardMinutes(5))))
                 .discardingFiredPanes()
                 .withAllowedLateness(Duration.standardMinutes(10)))    
             .apply(Count.perElement());   
    
-    
-    PCollection<String> lines3 = counted
+    // Turn the composite keys and counts into strings so they can be written to file
+    PCollection<String> counted_string = counted
     .apply(
             MapElements.into(TypeDescriptors.strings())
                 .via(
                     (KV<String, Long> wordCount) ->
                         wordCount.getKey() + ": " + wordCount.getValue()));
     
-
-    //fixedWindowedItems
-    lines3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(1).to(options.getOutput()));
+    //Write strings to file 
+    counted_string.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(1).to(options.getOutput()));
 
     p.run().waitUntilFinish();
 
