@@ -26,12 +26,16 @@ import org.joda.time.Duration;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.util.Arrays;
 import static junit.framework.Assert.assertNotNull;
 import org.apache.beam.sdk.transforms.Watch;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
 import org.junit.Test;
 import java.util.Date;
+import java.util.List;
+import org.apache.beam.examples.BeamPipeA.ParseJsonFn;
+import org.apache.beam.sdk.testing.PAssert;
 import org.joda.time.DateTime;
 
 
@@ -124,21 +128,30 @@ public class BeamPipeA {
       
         ObjectMapper mapper = new ObjectMapper();
         
+        GetMessage getMessage = new GetMessage();
         // load json string to model
-        GetMessage getMessage = mapper.readValue(in, GetMessage.class);
+        
+        try {
+        
+        // load input data to model
+        getMessage = mapper.readValue(in, GetMessage.class);
         
         // extract event timestamp
         DateTime dt = new DateTime(getMessage.getevent_timestamp());
-        org.joda.time.Instant test = dt.toInstant();
+        org.joda.time.Instant dt_inst = dt.toInstant();
         
-        try {
-        //add event timestamp to the pcollection of composite keys
-        out.outputWithTimestamp(getMessage.getservice_area_name().toString() + "," + getMessage.getpayment_type().toString() + "," + getMessage.getstatus().toString(), test);
+        // output composite key
+        out.outputWithTimestamp(getMessage.getservice_area_name().toString() + "," + getMessage.getpayment_type().toString() + "," + getMessage.getstatus().toString(), dt_inst);
+       
           
-        } catch (java.lang.IllegalArgumentException exception) {
+        } catch (Exception exception) {
+            //com.fasterxml.jackson.core.JsonParseException
 
-              LOG.info("Exception found:", exception);
+              LOG.warn("Failed to process input {}", exception);
+     
         }
+        
+       
         
         }
 
@@ -170,7 +183,7 @@ public class BeamPipeA {
     Pipeline p = Pipeline.create(options);
 
     // Continously watch for new files every n seconds
-    PCollection<String> myInput = p.apply("ReadLines", TextIO.read().from(options.getInputFile())
+    PCollection<String> lines = p.apply("ReadLines", TextIO.read().from(options.getInputFile())
         .watchForNewFiles(
         Duration.standardSeconds(5),
         Watch.Growth.<String>never())
@@ -178,7 +191,7 @@ public class BeamPipeA {
             
             
 
-    PCollection<String> composite_keys = myInput.apply(ParDo.of(new ParseJsonFn()));  
+    PCollection<String> composite_keys = lines.apply(ParDo.of(new ParseJsonFn()));  
     
     PCollection<KV<String, Long>> counted = composite_keys
             .apply(
@@ -193,7 +206,7 @@ public class BeamPipeA {
             .apply(Count.perElement());   
    
     
-    PCollection<String> myInput3 = counted
+    PCollection<String> lines3 = counted
     .apply(
             MapElements.into(TypeDescriptors.strings())
                 .via(
@@ -202,8 +215,20 @@ public class BeamPipeA {
     
 
     //fixedWindowedItems
-    myInput3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(1).to(options.getOutput()));
+    lines3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(1).to(options.getOutput()));
 
+    
+    // Unit Test TextIO
+    List<String> expectedResults1 =
+    Arrays.asList("{\"order_number\": \"AP-1\", \"service_type\": \"GET_INTERVIEW\", \"driver_id\": \"driver-123\", \"customer_id\": \"customer-123\", \"service_area_name\": \"JAKARTA\", \"payment_type\": \"GET_CASH\", \"status\": \"COMPLETED\", \"event_timestamp\": \"2018-09-29T14:00:00.000Z\"}", "Two");
+    PAssert.that(lines).containsInAnyOrder(expectedResults1);
+    
+    // Unit Test Composite Key
+    List<String> expectedResults2 =
+    Arrays.asList("BANGKOK,GET_CASH,COMPLETED", "Two");
+    PAssert.that(composite_keys).containsInAnyOrder(expectedResults2);
+    
+    
     
     p.run().waitUntilFinish();
 
