@@ -41,10 +41,11 @@ The pipeline can be run locally with
 
 # TESTING THE APPLICATION
 A unit test exists for the main transformation class ParseJsonFn. It can be run with 
+
 "mvn test"
 
 # NOTES
-1. In the present implementation, the pipeline does not remove duplicates per order id. Thus, when two messages arrive for a given order id, one with status 'ACTIVE' and one with 'COMPLETE', both will be present in the aggregated data. As a result, questions such as 'How many orders were cancelled in Bangkok for Get_RIDE from 08:00-09:00' can be answered with the present implementation. However, a count of all orders for a given hourly window will likely exceed the total number of orders because of status changes for given order ids.
+In the present implementation, the pipeline does not remove duplicates per order id. Thus, when two messages arrive for a given order id, one with status 'ACTIVE' and one with 'COMPLETE', both will be present in the aggregated data. As a result, questions such as 'How many orders were cancelled in Bangkok for Get_RIDE from 08:00-09:00' can be answered with the present implementation. However, a count of all orders for a given hourly window will likely exceed the total number of orders because of status changes for given order ids.
 
 In case duplicates need to be removed, in future implementations, the following options would be viable
 a) Do not allow duplicate order_id's within time window: Per order_id, always keep only the row with the most recent timestamp within a window. 
