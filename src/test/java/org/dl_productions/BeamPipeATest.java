@@ -3,7 +3,8 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package org.apache.beam.examples;
+package org.dl_productions;
+import org.dl_productions.BeamPipeA;
  import java.util.Arrays;
 import java.util.List;
 import org.apache.beam.sdk.Pipeline;

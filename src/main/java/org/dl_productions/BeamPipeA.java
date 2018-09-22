@@ -3,11 +3,10 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-package org.apache.beam.examples;
+package org.dl_productions;
 
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.io.TextIO;
-import org.apache.beam.sdk.options.Default;
 import org.apache.beam.sdk.options.Description;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
@@ -26,25 +25,16 @@ import org.joda.time.Duration;
 import org.apache.beam.sdk.transforms.windowing.Window;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
-import java.util.Arrays;
-import static junit.framework.Assert.assertNotNull;
 import org.apache.beam.sdk.transforms.Watch;
 import org.apache.beam.sdk.transforms.windowing.AfterProcessingTime;
 import org.apache.beam.sdk.transforms.windowing.Repeatedly;
-import org.junit.Test;
-import java.util.Date;
-import java.util.List;
-import org.apache.beam.examples.BeamPipeA.ParseJsonFn;
-import org.apache.beam.sdk.testing.PAssert;
+import org.dl_productions.BeamPipeA.ParseJsonFn;
 import org.joda.time.DateTime;
-
 
 /**
  *
  * @author david
  */
-
-
 
 public class BeamPipeA {
     
@@ -60,8 +50,7 @@ public class BeamPipeA {
         private String payment_type;
         private String status;
         private String event_timestamp;
-        
-        
+           
         public String getorder_number() {
             return order_number;
         }
@@ -117,52 +106,43 @@ public class BeamPipeA {
         public void setevent_timestamp(String event_timestamp) {
             this.event_timestamp = event_timestamp;
         }
-
     }
-
     
      static class ParseJsonFn extends DoFn<String, String> {
 
         @ProcessElement
         public void processElement(@Element String in, OutputReceiver<String> out) throws IOException {
       
-        ObjectMapper mapper = new ObjectMapper();
-        
+        ObjectMapper mapper = new ObjectMapper();  
         GetMessage getMessage = new GetMessage();
+        
         // load json string to model
-        
         try {
-        
-        // load input data to model
-        getMessage = mapper.readValue(in, GetMessage.class);
-        
-        // extract event timestamp
-        DateTime dt = new DateTime(getMessage.getevent_timestamp());
-        org.joda.time.Instant dt_inst = dt.toInstant();
-        
-        // output composite key
-        out.outputWithTimestamp(getMessage.getservice_area_name().toString() + "," + getMessage.getpayment_type().toString() + "," + getMessage.getstatus().toString(), dt_inst);
-       
+
+            // load input data to model
+            getMessage = mapper.readValue(in, GetMessage.class);
+
+            // extract event timestamp
+            DateTime dt = new DateTime(getMessage.getevent_timestamp());
+            org.joda.time.Instant dt_inst = dt.toInstant();
+
+            // output composite key
+            out.outputWithTimestamp(getMessage.getservice_area_name().toString() + "," + getMessage.getpayment_type().toString() + "," + getMessage.getstatus().toString(), dt_inst);
+
           
         } catch (Exception exception) {
-            //com.fasterxml.jackson.core.JsonParseException
 
+              // Write this to file in production
               LOG.warn("Failed to process input {}", exception);
      
-        }
-        
-       
-        
-        }
-
-   
+        }      
+        }  
     }
   
   
   public interface BeamPipeAOptions extends PipelineOptions {
 
     @Description("Path of the file to read from")
-    //@Default.String("gs://apache-beam-samples/shakespeare/kinglear.txt")
     String getInputFile();
 
     void setInputFile(String value);
@@ -177,7 +157,8 @@ public class BeamPipeA {
 
 
   public static void main(String[] args) {
-    BeamPipeAOptions options =
+    
+      BeamPipeAOptions options =
         PipelineOptionsFactory.fromArgs(args).withValidation().as(BeamPipeAOptions.class);
 
     Pipeline p = Pipeline.create(options);
@@ -185,12 +166,11 @@ public class BeamPipeA {
     // Continously watch for new files every n seconds
     PCollection<String> lines = p.apply("ReadLines", TextIO.read().from(options.getInputFile())
         .watchForNewFiles(
-        Duration.standardSeconds(5),
+        Duration.standardSeconds(10),
         Watch.Growth.<String>never())
     );
             
             
-
     PCollection<String> composite_keys = lines.apply(ParDo.of(new ParseJsonFn()));  
     
     PCollection<KV<String, Long>> counted = composite_keys
@@ -217,19 +197,6 @@ public class BeamPipeA {
     //fixedWindowedItems
     lines3.apply("WriteCounts", TextIO.write().withWindowedWrites().withNumShards(1).to(options.getOutput()));
 
-    
-    // Unit Test TextIO
-    List<String> expectedResults1 =
-    Arrays.asList("{\"order_number\": \"AP-1\", \"service_type\": \"GET_INTERVIEW\", \"driver_id\": \"driver-123\", \"customer_id\": \"customer-123\", \"service_area_name\": \"JAKARTA\", \"payment_type\": \"GET_CASH\", \"status\": \"COMPLETED\", \"event_timestamp\": \"2018-09-29T14:00:00.000Z\"}", "Two");
-    PAssert.that(lines).containsInAnyOrder(expectedResults1);
-    
-    // Unit Test Composite Key
-    List<String> expectedResults2 =
-    Arrays.asList("BANGKOK,GET_CASH,COMPLETED", "Two");
-    PAssert.that(composite_keys).containsInAnyOrder(expectedResults2);
-    
-    
-    
     p.run().waitUntilFinish();
 
   }
