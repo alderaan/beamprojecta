@@ -34,9 +34,11 @@ static final String[] FileInputString = new String[] {
 };
  static final List<String> FileInputStringList = Arrays.asList(FileInputString);
  // Expected output from DoFn
-static final String[] CompositeKeyOutExp = new String[] {
+
+ static final String[] CompositeKeyOutExp = new String[] {
     "JAKARTA,GET_CASH,COMPLETED"
 };
+ 
  static final List<String> CompositeKeyOutExpList = Arrays.asList(CompositeKeyOutExp);
   
  @Test
