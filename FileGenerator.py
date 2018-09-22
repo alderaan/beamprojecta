@@ -16,7 +16,7 @@ payment_type_tp = ("GET_CASH", "CREDITCARD", "PAYPAL")
 status_tp = ("COMPLETED", "CANCELLED", "ACTIVE")
 
 
-for x in range(0, 1000):
+for x in range(0, 180):
 
     r1 = random.randint(0, 2)
     r2 = random.randint(0, 2)
@@ -30,7 +30,7 @@ for x in range(0, 1000):
 
     filename = os.path.join(dir, 'input', 'input_' + str(x) + '.json')
     # add some seconds to make sure event time is after processing time of beam pipeline
-    currentTime = datetime.utcnow() + timedelta(seconds=20) + timedelta(seconds=time_add)
+    currentTime = datetime.utcnow() + timedelta(minutes=5) + timedelta(minutes=time_add)
     currentTimeString = str(currentTime.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]) + "Z"
 
     f= open(filename, "a")
